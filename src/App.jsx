@@ -18,6 +18,27 @@ _gs.textContent = `
   input:focus,textarea:focus,select:focus{outline:none!important}
   .row-hover:hover{background:#f9f8f4!important}
   .card-hover:hover{box-shadow:0 6px 24px rgba(0,0,0,0.10)!important;transform:translateY(-2px)!important}
+  .nav-desktop{display:flex;gap:1px;flex-wrap:wrap;}
+  .nav-mobile-btn{display:none;background:none;border:none;cursor:pointer;padding:6px;border-radius:8px;}
+  .mobile-menu{display:none;flex-direction:column;position:absolute;top:56px;left:0;right:0;background:#fff;border-bottom:1px solid #e6e3db;z-index:999;padding:8px 0;box-shadow:0 8px 24px rgba(0,0,0,0.1);}
+  .mobile-menu.open{display:flex;}
+  .mobile-menu button{padding:13px 24px;text-align:left;border:none;background:none;font-size:14px;cursor:pointer;color:#1c1917;font-family:'Sora',sans-serif;}
+  .mobile-menu button:hover{background:#fdf0e6;color:#e07b39;}
+  @media(max-width:768px){
+    .nav-desktop{display:none!important;}
+    .nav-mobile-btn{display:flex!important;align-items:center;justify-content:center;}
+    .main-pad{padding:0 14px 80px!important;}
+    .hero-flex{flex-direction:column!important;text-align:center!important;padding:22px 18px!important;gap:14px!important;}
+    .hero-flex .hero-info{text-align:center!important;}
+    .stats-row{grid-template-columns:repeat(2,1fr)!important;}
+    .two-col{grid-template-columns:1fr!important;}
+    .three-col{grid-template-columns:1fr 1fr!important;}
+    .admin-bar{bottom:12px!important;right:12px!important;}
+  }
+  @media(max-width:420px){
+    .three-col{grid-template-columns:1fr!important;}
+    .stats-row{grid-template-columns:repeat(2,1fr)!important;}
+  }
 `;
 document.head.appendChild(_gs);
 
@@ -307,7 +328,7 @@ function Admin({data,setData,onLogout}) {
   const togglePoll=id=>setData(d=>({...d,polls:d.polls.map(p=>p.id===id?{...p,active:!p.active}:p)}));
   const delPoll=id=>{if(!confirm("Delete poll?"))return;setData(d=>({...d,polls:d.polls.filter(p=>p.id!==id)}));};
 
-  const TABS=[["dash","📊","Dashboard"],["leader","👤","Leadership"],["projects","🏗","Projects"],["meetings","📋","Meetings"],["notices","📢","Notices"],["polls","🗳️","Polls"],["bulk","📥","Bulk Upload"],["griev","📬","Grievances"]];
+  const TABS=[["dash","📊","Dashboard"],["leader","👤","Leadership"],["projects","🏗","Projects"],["contractors","👷","Contractors"],["notif","🔔","Notifications"],["meetings","📋","Meetings"],["notices","📢","Notices"],["polls","🗳️","Polls"],["bulk","📥","Bulk Upload"],["griev","📬","Grievances"]];
 
   return(
     <div style={{display:"flex",height:"100vh",fontFamily:C.sans,color:C.ink}}>
@@ -632,6 +653,283 @@ function Admin({data,setData,onLogout}) {
           </div>
         )}
 
+        {/* ── CONTRACTORS ── */}
+        {tab==="contractors"&&<AdminContractors data={data} setData={setData}/>}
+
+        {/* ── NOTIFICATIONS ── */}
+        {tab==="notif"&&<AdminNotifications data={data}/>}
+
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ADMIN — CONTRACTOR MANAGEMENT
+════════════════════════════════════════════════════════════════ */
+function AdminContractors({data,setData}) {
+  const [contractors,setContractors]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [form,setForm]=useState({name:"",email:"",phone:"",company:"",password_hash:""});
+  const [assigning,setAssigning]=useState(null);
+  const [assignments,setAssignments]=useState([]);
+  const [msg,setMsg]=useState("");
+  const [showAdd,setShowAdd]=useState(false);
+
+  useEffect(()=>{loadContractors();},[]);
+
+  const loadContractors=async()=>{
+    setLoading(true);
+    try {
+      const [ctrs,asgn]=await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/contractors?select=*&order=created_at.desc`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}}).then(r=>r.json()),
+        fetch(`${SUPABASE_URL}/rest/v1/project_assignments?select=*`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}}).then(r=>r.json()),
+      ]);
+      setContractors(ctrs||[]);
+      setAssignments(asgn||[]);
+    } catch(e){console.error(e);} finally{setLoading(false);}
+  };
+
+  const addContractor=async()=>{
+    if(!form.name||!form.email||!form.password_hash){setMsg("Naam, email aur password zaroori hai");return;}
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/contractors`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify(form)
+      });
+      setMsg("✅ Contractor add ho gaya!");
+      setForm({name:"",email:"",phone:"",company:"",password_hash:""});
+      setShowAdd(false);
+      loadContractors();
+    } catch(e){setMsg("Error aaya");} finally{setTimeout(()=>setMsg(""),3000);}
+  };
+
+  const toggleActive=async(c)=>{
+    await fetch(`${SUPABASE_URL}/rest/v1/contractors?id=eq.${c.id}`,{
+      method:"PATCH",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json"},
+      body:JSON.stringify({active:!c.active})
+    });
+    loadContractors();
+  };
+
+  const assignProject=async(contractorId,projectId)=>{
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/project_assignments`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify({contractor_id:contractorId,project_id:parseInt(projectId)})
+      });
+      // Send notification to contractor
+      await fetch(`${SUPABASE_URL}/rest/v1/notifications`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify({title:"Naya Project Assign Hua!",message:`Aapko ek naya project assign kiya gaya hai. Dashboard mein dekho.`,type:"contractor",target:"contractor",contractor_id:contractorId,read:false})
+      });
+      setMsg("✅ Project assign ho gaya aur notification bhi bheji gayi!");
+      loadContractors();
+    } catch(e){setMsg("Error");} finally{setTimeout(()=>setMsg(""),3000);}
+  };
+
+  const removeAssignment=async(contractorId,projectId)=>{
+    await fetch(`${SUPABASE_URL}/rest/v1/project_assignments?contractor_id=eq.${contractorId}&project_id=eq.${projectId}`,{
+      method:"DELETE",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}
+    });
+    loadContractors();
+    setMsg("Assignment remove ho gayi");
+    setTimeout(()=>setMsg(""),2000);
+  };
+
+  if(loading) return <div style={{padding:40,textAlign:"center",color:C.ink3}}>Loading contractors...</div>;
+
+  return(
+    <div className="fu">
+      {msg&&<div style={{position:"fixed",top:20,right:20,background:msg.startsWith("✅")?C.greenL:C.redL,color:msg.startsWith("✅")?"#14532d":C.red,padding:"10px 18px",borderRadius:10,fontSize:13,fontFamily:C.mono,zIndex:9999}}>{msg}</div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20}}>
+        <SectionTitle sub="Field workers aur contractors manage karo">Contractor Management</SectionTitle>
+        <Btn onClick={()=>setShowAdd(s=>!s)}>+ Naya Contractor Add Karo</Btn>
+      </div>
+
+      {showAdd&&(
+        <Card style={{padding:22,marginBottom:20,background:C.saffronL,border:`1px solid ${C.saffron}33`}}>
+          <div style={{fontSize:14,fontWeight:600,marginBottom:16,color:C.ink}}>Naya Contractor / Worker</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+            <Field label="Naam *" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Worker ka naam"/>
+            <Field label="Email *" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="login email"/>
+            <Field label="Phone" value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))} placeholder="mobile number"/>
+            <Field label="Company / Firm" value={form.company} onChange={e=>setForm(f=>({...f,company:e.target.value}))} placeholder="company naam"/>
+            <Field label="Password *" value={form.password_hash} onChange={e=>setForm(f=>({...f,password_hash:e.target.value}))} placeholder="login password"/>
+          </div>
+          {msg&&!msg.startsWith("✅")&&<div style={{color:C.red,fontSize:12,marginTop:8}}>{msg}</div>}
+          <div style={{display:"flex",gap:10,marginTop:16}}>
+            <Btn onClick={addContractor}>✅ Save Karo</Btn>
+            <Btn variant="secondary" onClick={()=>setShowAdd(false)}>Cancel</Btn>
+          </div>
+        </Card>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {contractors.length===0&&<Card style={{padding:24,textAlign:"center"}}><div style={{fontSize:32,marginBottom:8}}>👷</div><div style={{color:C.ink3}}>Koi contractor nahi abhi — upar se add karo</div></Card>}
+        {contractors.map(c=>{
+          const cAssignments=assignments.filter(a=>a.contractor_id===c.id);
+          const assignedProjects=data.projects.filter(p=>cAssignments.find(a=>a.project_id===p.id));
+          const unassignedProjects=data.projects.filter(p=>!cAssignments.find(a=>a.project_id===p.id));
+          return(
+            <Card key={c.id} style={{padding:20,opacity:c.active?1:0.6}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:15,color:C.ink}}>{c.name}</div>
+                  <div style={{fontSize:12,color:C.ink3,marginTop:3}}>📧 {c.email} · 📞 {c.phone}</div>
+                  {c.company&&<div style={{fontSize:12,color:C.ink4}}>🏢 {c.company}</div>}
+                </div>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <span style={{fontSize:11,fontFamily:C.mono,color:c.active?C.green:C.red,background:c.active?C.greenL:C.redL,padding:"3px 10px",borderRadius:99}}>{c.active?"Active":"Inactive"}</span>
+                  <Btn sm variant={c.active?"danger":"secondary"} onClick={()=>toggleActive(c)}>{c.active?"Deactivate":"Activate"}</Btn>
+                </div>
+              </div>
+
+              {/* Assigned Projects */}
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:11,fontFamily:C.mono,color:C.ink3,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.08em"}}>Assigned Projects ({assignedProjects.length})</div>
+                {assignedProjects.length===0?<div style={{fontSize:12,color:C.ink4,fontStyle:"italic"}}>Koi project assign nahi hua</div>:(
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {assignedProjects.map(p=>(
+                      <div key={p.id} style={{display:"flex",alignItems:"center",gap:6,background:C.greenL,borderRadius:8,padding:"4px 10px"}}>
+                        <span style={{fontSize:12,color:"#14532d"}}>{p.scheme} — {p.village}</span>
+                        <button onClick={()=>removeAssignment(c.id,p.id)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",fontSize:13,lineHeight:1}}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Assign New Project */}
+              {unassignedProjects.length>0&&(
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <select defaultValue="" onChange={e=>{if(e.target.value)assignProject(c.id,e.target.value);e.target.value="";}}
+                    style={{flex:1,padding:"7px 12px",borderRadius:8,border:`1.5px solid ${C.border}`,fontSize:12,fontFamily:C.sans,background:"#fff",outline:"none",color:C.ink}}>
+                    <option value="">+ Project assign karo...</option>
+                    {unassignedProjects.map(p=><option key={p.id} value={p.id}>{p.scheme} — {p.village}</option>)}
+                  </select>
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ADMIN — NOTIFICATION SENDER
+════════════════════════════════════════════════════════════════ */
+function AdminNotifications({data}) {
+  const [contractors,setContractors]=useState([]);
+  const [form,setForm]=useState({title:"",message:"",target:"all"});
+  const [sentNotifs,setSentNotifs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [sending,setSending]=useState(false);
+  const [msg,setMsg]=useState("");
+  const [selContractor,setSelContractor]=useState("");
+
+  useEffect(()=>{loadAll();},[]);
+
+  const loadAll=async()=>{
+    try {
+      const [ctrs,notifs]=await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/contractors?select=*&active=eq.true`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}}).then(r=>r.json()),
+        fetch(`${SUPABASE_URL}/rest/v1/notifications?select=*&order=created_at.desc&limit=30`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}}).then(r=>r.json()),
+      ]);
+      setContractors(ctrs||[]);
+      setSentNotifs(notifs||[]);
+    } catch(e){console.error(e);} finally{setLoading(false);}
+  };
+
+  const sendNotification=async()=>{
+    if(!form.title||!form.message){setMsg("Title aur message dono likho");return;}
+    setSending(true);
+    try {
+      const payload={title:form.title,message:form.message,type:form.target==="all"?"public":"contractor",target:form.target,read:false};
+      if(form.target==="contractor"&&selContractor) payload.contractor_id=parseInt(selContractor);
+
+      await fetch(`${SUPABASE_URL}/rest/v1/notifications`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify(payload)
+      });
+
+      // Browser push notification for public
+      if((form.target==="all"||form.target==="public")&&"Notification" in window) {
+        Notification.requestPermission().then(perm=>{
+          if(perm==="granted") new Notification(`LokDrishti: ${form.title}`,{body:form.message,icon:"👁️"});
+        });
+      }
+
+      setMsg("✅ Notification send ho gayi!");
+      setForm({title:"",message:"",target:"all"});
+      setSelContractor("");
+      loadAll();
+    } catch(e){setMsg("Error aaya");} finally{setSending(false);setTimeout(()=>setMsg(""),3000);}
+  };
+
+  return(
+    <div className="fu">
+      {msg&&<div style={{position:"fixed",top:20,right:20,background:msg.startsWith("✅")?C.greenL:C.redL,color:msg.startsWith("✅")?"#14532d":C.red,padding:"10px 18px",borderRadius:10,fontSize:13,fontFamily:C.mono,zIndex:9999}}>{msg}</div>}
+      <SectionTitle sub="Public aur contractors ko notifications bhejo">Notification Center</SectionTitle>
+
+      <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:20}}>
+        {/* Send Form */}
+        <Card style={{padding:24}}>
+          <div style={{fontSize:14,fontWeight:600,marginBottom:16,color:C.ink}}>🔔 Naya Notification Bhejo</div>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <Field label="Title *" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="e.g. Naya kaam shuru ho gaya!"/>
+            <Field label="Message *" rows={3} value={form.message} onChange={e=>setForm(f=>({...f,message:e.target.value}))} placeholder="Poora message likhiye..."/>
+            <div>
+              <Label>Kisko Bhejna Hai?</Label>
+              <div style={{display:"flex",gap:8}}>
+                {[["all","🌐 Sabko"],["public","👥 Public"],["contractor","👷 Contractor"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setForm(f=>({...f,target:v}))}
+                    style={{flex:1,padding:"8px 6px",borderRadius:8,border:`1.5px solid ${form.target===v?C.saffron:C.border}`,background:form.target===v?C.saffronL:"#fff",fontSize:11,cursor:"pointer",fontFamily:C.sans,color:form.target===v?C.saffronD:C.ink3,fontWeight:form.target===v?600:400}}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {form.target==="contractor"&&(
+              <div>
+                <Label>Specific Contractor</Label>
+                <select value={selContractor} onChange={e=>setSelContractor(e.target.value)}
+                  style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:13,fontFamily:C.sans,background:"#fff",outline:"none"}}>
+                  <option value="">Sab contractors ko</option>
+                  {contractors.map(c=><option key={c.id} value={c.id}>{c.name} — {c.email}</option>)}
+                </select>
+              </div>
+            )}
+            <Btn onClick={sendNotification} disabled={sending}>{sending?"Sending...":"📤 Send Karo"}</Btn>
+          </div>
+        </Card>
+
+        {/* Recent Notifications */}
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:C.ink,marginBottom:12}}>Recent Notifications</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:500,overflowY:"auto"}}>
+            {loading?<div style={{color:C.ink3,fontSize:12}}>Loading...</div>:sentNotifs.length===0?<div style={{color:C.ink3,fontSize:12}}>Koi notification nahi abhi</div>:
+              sentNotifs.map(n=>(
+                <Card key={n.id} style={{padding:14}}>
+                  <div style={{fontWeight:600,fontSize:12,color:C.ink,marginBottom:4}}>{n.title}</div>
+                  <div style={{fontSize:11,color:C.ink3,marginBottom:6}}>{n.message}</div>
+                  <div style={{display:"flex",gap:6}}>
+                    <span style={{fontSize:10,fontFamily:C.mono,color:C.ink4}}>{fmtD(n.created_at?.split("T")[0])}</span>
+                    <span style={{fontSize:10,fontFamily:C.mono,background:n.target==="all"?C.blueL:C.saffronL,color:n.target==="all"?C.blue:C.saffronD,padding:"1px 6px",borderRadius:4}}>{n.target==="all"?"Sabko":n.target==="public"?"Public":"Contractor"}</span>
+                  </div>
+                </Card>
+              ))
+            }
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -891,21 +1189,22 @@ function Public({data,setData}) {
   const NAV=[["home","Home"],["works","Works"],["meetings","Meetings"],["notices","Notices"],["polls","Polls"],["analytics","Analytics"],["schemes","Schemes"],["grievance","Grievance"]];
   const important=data.notices.filter(n=>n.important);
 
-  const navTo=(p)=>{setPage(p);setSP(null);setSM(null);};
+  const navTo=(p)=>{setPage(p);setSP(null);setSM(null);setMobOpen(false);};
+  const [mobOpen,setMobOpen]=useState(false);
 
   return(
     <div style={{minHeight:"100vh",background:C.bg,fontFamily:C.sans,color:C.ink}}>
       {/* Ticker */}
       {important.length>0&&(
-        <div style={{background:`linear-gradient(90deg,${C.saffron},${C.saffronD})`,padding:"7px 28px",display:"flex",alignItems:"center",gap:12}}>
+        <div style={{background:`linear-gradient(90deg,${C.saffron},${C.saffronD})`,padding:"7px 16px",display:"flex",alignItems:"center",gap:12,overflow:"hidden"}}>
           <span style={{fontSize:10,fontFamily:C.mono,color:"rgba(255,255,255,0.8)",background:"rgba(0,0,0,0.15)",padding:"2px 8px",borderRadius:4,letterSpacing:"0.06em",flexShrink:0}}>NOTICE</span>
-          <span style={{fontSize:12,color:"#fff",fontWeight:500}}>{important[0].title} — {important[0].content.slice(0,100)}…</span>
+          <span style={{fontSize:12,color:"#fff",fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{important[0].title} — {important[0].content.slice(0,80)}…</span>
         </div>
       )}
 
       {/* Header */}
       <header style={{background:C.card,borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 0 rgba(0,0,0,0.04)"}}>
-        <div style={{maxWidth:1140,margin:"0 auto",padding:"0 28px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56}}>
+        <div style={{maxWidth:1140,margin:"0 auto",padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:56,position:"relative"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div style={{width:34,height:34,borderRadius:9,background:`linear-gradient(135deg,${C.saffron},${C.saffronD})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>👁️</div>
             <div>
@@ -913,7 +1212,8 @@ function Public({data,setData}) {
               <div style={{fontSize:9,color:C.ink4,fontFamily:C.mono,letterSpacing:"0.08em",textTransform:"uppercase"}}>Panchayat Transparency Portal</div>
             </div>
           </div>
-          <nav style={{display:"flex",gap:1,flexWrap:"wrap"}}>
+          {/* Desktop Nav */}
+          <nav className="nav-desktop">
             {NAV.map(([id,l])=>(
               <button key={id} onClick={()=>navTo(id)}
                 style={{padding:"6px 12px",background:page===id?`${C.saffron}16`:"transparent",border:"none",borderRadius:8,color:page===id?C.saffronD:C.ink3,fontFamily:C.sans,fontSize:12,cursor:"pointer",fontWeight:page===id?600:400,transition:"all .15s"}}>
@@ -921,16 +1221,32 @@ function Public({data,setData}) {
               </button>
             ))}
           </nav>
+          {/* Mobile Hamburger */}
+          <button className="nav-mobile-btn" onClick={()=>setMobOpen(o=>!o)}
+            style={{flexDirection:"column",gap:5,padding:"8px"}}>
+            <div style={{width:22,height:2,background:mobOpen?C.saffron:C.ink,borderRadius:2,transition:"all .2s",transform:mobOpen?"rotate(45deg) translate(5px,5px)":"none"}}/>
+            <div style={{width:22,height:2,background:mobOpen?C.saffron:C.ink,borderRadius:2,transition:"all .2s",opacity:mobOpen?0:1}}/>
+            <div style={{width:22,height:2,background:mobOpen?C.saffron:C.ink,borderRadius:2,transition:"all .2s",transform:mobOpen?"rotate(-45deg) translate(5px,-5px)":"none"}}/>
+          </button>
+        </div>
+        {/* Mobile Menu Dropdown */}
+        <div className={`mobile-menu${mobOpen?" open":""}`}>
+          {NAV.map(([id,l])=>(
+            <button key={id} onClick={()=>navTo(id)}
+              style={{fontWeight:page===id?600:400,color:page===id?C.saffronD:C.ink,background:page===id?C.saffronL:"none"}}>
+              {l}
+            </button>
+          ))}
         </div>
       </header>
 
-      <main style={{maxWidth:1140,margin:"0 auto",padding:"0 28px 80px"}}>
+      <main className="main-pad" style={{maxWidth:1140,margin:"0 auto"}}>
 
         {/* ────────── HOME ────────── */}
         {page==="home"&&(
           <div className="fu">
             {/* Hero */}
-            <div style={{margin:"28px 0 24px",background:`linear-gradient(130deg,${C.ink} 0%,#32292a 100%)`,borderRadius:20,padding:"34px 38px",display:"flex",gap:26,alignItems:"center",boxShadow:"0 8px 36px rgba(0,0,0,0.14)"}}>
+            <div className="hero-flex" style={{margin:"20px 0 20px",background:`linear-gradient(130deg,${C.ink} 0%,#32292a 100%)`,borderRadius:16,padding:"28px 28px",display:"flex",gap:26,alignItems:"center",boxShadow:"0 8px 36px rgba(0,0,0,0.14)"}}>
               <div style={{width:86,height:86,borderRadius:"50%",background:"#3a332e",border:`3px solid ${C.saffron}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                 {data.leader.photo?<img src={data.leader.photo} style={{width:"100%",height:"100%",objectFit:"cover"}} alt=""/>:<span style={{fontSize:34,color:"#555"}}>👤</span>}
               </div>
@@ -952,7 +1268,7 @@ function Public({data,setData}) {
                 <span style={{width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block",animation:"blink 2s infinite"}}/>
                 Live Statistics — Auto-calculated
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12}}>
+              <div className="stats-row" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12}}>
                 {[{l:"Projects\nCompleted",v:stats.comp,ic:"✅",c:C.green},{l:"Budget\nAllocated",v:fmtC(stats.budget),ic:"💰",c:C.saffron},
                   {l:"Budget\nUtilized",v:fmtC(stats.spent),ic:"📊",c:C.purple},{l:"Villages\nCovered",v:stats.villages,ic:"🏘️",c:C.blue},
                   {l:"Total\nBeneficiaries",v:fmt(stats.benef),ic:"👥",c:C.green}].map(({l,v,ic,c})=>(
@@ -1882,6 +2198,7 @@ export default function App() {
   const [data,setData]=useState(DEFAULT_DATA);
   const [loading,setLoading]=useState(true);
   const [dbReady,setDbReady]=useState(false);
+  const [contractor,setContractor]=useState(null);
 
   // Load all data from Supabase on mount
   useEffect(()=>{
@@ -1994,13 +2311,410 @@ export default function App() {
           ⚠️ Supabase tables empty — Please run the SQL setup file first!
         </div>
       )}
-      <div style={{position:"fixed",bottom:20,right:20,zIndex:9999,display:"flex",gap:3,background:"rgba(28,25,23,0.92)",backdropFilter:"blur(12px)",borderRadius:12,padding:4,boxShadow:"0 4px 20px rgba(0,0,0,0.22)"}}>
+      <div className="admin-bar" style={{position:"fixed",bottom:20,right:20,zIndex:9999,display:"flex",gap:3,background:"rgba(28,25,23,0.92)",backdropFilter:"blur(12px)",borderRadius:12,padding:4,boxShadow:"0 4px 20px rgba(0,0,0,0.22)"}}>
         <button onClick={()=>setView("public")} style={{padding:"7px 16px",background:view==="public"?`linear-gradient(135deg,${C.saffron},${C.saffronD})`:"none",border:"none",borderRadius:8,color:view==="public"?"#fff":"rgba(255,255,255,0.38)",fontSize:11,fontFamily:C.mono,cursor:"pointer",fontWeight:500,letterSpacing:"0.04em"}}>🌐 Public</button>
         <button onClick={()=>setView(view==="admin"?"public":"login")} style={{padding:"7px 16px",background:view==="admin"?`linear-gradient(135deg,${C.saffron},${C.saffronD})`:"none",border:"none",borderRadius:8,color:view==="admin"?"#fff":"rgba(255,255,255,0.38)",fontSize:11,fontFamily:C.mono,cursor:"pointer",fontWeight:500,letterSpacing:"0.04em"}}>🔐 Admin</button>
+        <button onClick={()=>setView(view==="contractor"?"public":"contractor-login")} style={{padding:"7px 16px",background:view==="contractor"?`linear-gradient(135deg,${C.teal},#0f766e)`:"none",border:"none",borderRadius:8,color:view==="contractor"?"#fff":"rgba(255,255,255,0.38)",fontSize:11,fontFamily:C.mono,cursor:"pointer",fontWeight:500,letterSpacing:"0.04em"}}>👷 Worker</button>
       </div>
       {view==="public"&&<Public data={data} setData={updateData}/>}
       {view==="login"&&<Login onLogin={()=>setView("admin")}/>}
       {view==="admin"&&<Admin data={data} setData={updateData} onLogout={()=>setView("public")}/>}
+      {view==="contractor-login"&&<ContractorLogin onLogin={(c)=>{setContractor(c);setView("contractor");}} onBack={()=>setView("public")}/>}
+      {view==="contractor"&&contractor&&<ContractorPortal contractor={contractor} data={data} setData={updateData} onLogout={()=>{setContractor(null);setView("public");}}/>}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CONTRACTOR LOGIN
+════════════════════════════════════════════════════════════════ */
+function ContractorLogin({onLogin, onBack}) {
+  const [email,setEmail]=useState("");
+  const [pass,setPass]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [showP,setShowP]=useState(false);
+
+  const login=async()=>{
+    if(!email||!pass){setErr("Email aur password dono bharo");return;}
+    setLoading(true);setErr("");
+    try {
+      const res=await fetch(`${SUPABASE_URL}/rest/v1/contractors?email=eq.${encodeURIComponent(email)}&active=eq.true&select=*`,{
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}
+      });
+      const data=await res.json();
+      if(!data||data.length===0){setErr("Email nahi mila");setLoading(false);return;}
+      const c=data[0];
+      if(c.password_hash!==pass){setErr("Password galat hai");setLoading(false);return;}
+      onLogin(c);
+    } catch(e){setErr("Connection error");} finally{setLoading(false);}
+  };
+
+  return(
+    <div style={{minHeight:"100vh",background:"#f0ede6",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{width:"100%",maxWidth:380}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{width:56,height:56,borderRadius:16,background:`linear-gradient(135deg,${C.teal},#0f766e)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 12px"}}>👷</div>
+          <div style={{fontFamily:C.serif,fontSize:24,fontWeight:700,color:C.ink}}>Worker Portal</div>
+          <div style={{fontSize:12,color:C.ink3,fontFamily:C.mono,marginTop:4}}>LokDrishti Field Worker Login</div>
+        </div>
+        <Card style={{padding:28}}>
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div>
+              <Label>Email / Username</Label>
+              <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="aapka email"
+                style={{width:"100%",background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"11px 14px",color:C.ink,fontSize:13,fontFamily:C.sans,outline:"none",boxSizing:"border-box"}}
+                onFocus={e=>e.target.style.borderColor=C.teal} onBlur={e=>e.target.style.borderColor=C.border}/>
+            </div>
+            <div>
+              <Label>Password</Label>
+              <div style={{position:"relative"}}>
+                <input type={showP?"text":"password"} value={pass} onChange={e=>setPass(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&login()} placeholder="password"
+                  style={{width:"100%",background:"#fff",border:`1.5px solid ${C.border}`,borderRadius:10,padding:"11px 42px 11px 14px",color:C.ink,fontSize:13,fontFamily:C.sans,outline:"none",boxSizing:"border-box"}}
+                  onFocus={e=>e.target.style.borderColor=C.teal} onBlur={e=>e.target.style.borderColor=C.border}/>
+                <button onClick={()=>setShowP(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:14}}>{showP?"🙈":"👁"}</button>
+              </div>
+            </div>
+            {err&&<div style={{color:C.red,fontSize:12,padding:"8px 12px",background:C.redL,borderRadius:8}}>⚠️ {err}</div>}
+            <button onClick={login} disabled={loading}
+              style={{padding:"11px",borderRadius:10,background:`linear-gradient(135deg,${C.teal},#0f766e)`,color:"#fff",border:"none",fontSize:13,fontFamily:C.sans,fontWeight:600,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>
+              {loading?"Logging in...":"Login करें →"}
+            </button>
+            <button onClick={onBack} style={{background:"none",border:"none",color:C.ink3,fontSize:12,cursor:"pointer",fontFamily:C.sans}}>← Public Site pe Wapas</button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CONTRACTOR PORTAL
+════════════════════════════════════════════════════════════════ */
+function ContractorPortal({contractor, data, setData, onLogout}) {
+  const [tab,setTab]=useState("dashboard");
+  const [assignments,setAssignments]=useState([]);
+  const [logs,setLogs]=useState([]);
+  const [photos,setPhotos]=useState([]);
+  const [notifications,setNotifications]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [selProject,setSelProject]=useState(null);
+  const [logForm,setLogForm]=useState({workers_count:"",materials_used:"",progress_percent:"",notes:"",status:"Ongoing"});
+  const [photoForm,setPhotoForm]=useState({caption:"",photo_type:"during",file:null,preview:null,lat:null,lng:null});
+  const [submitting,setSubmitting]=useState(false);
+  const [msg,setMsg]=useState("");
+
+  useEffect(()=>{loadAll();},[]);
+
+  const loadAll=async()=>{
+    setLoading(true);
+    try {
+      const [asgn,lg,ph,notifs]=await Promise.all([
+        fetch(`${SUPABASE_URL}/rest/v1/project_assignments?contractor_id=eq.${contractor.id}&select=*`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}}).then(r=>r.json()),
+        fetch(`${SUPABASE_URL}/rest/v1/work_logs?contractor_id=eq.${contractor.id}&select=*&order=created_at.desc`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}}).then(r=>r.json()),
+        fetch(`${SUPABASE_URL}/rest/v1/work_photos?contractor_id=eq.${contractor.id}&select=*&order=taken_at.desc`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}}).then(r=>r.json()),
+        fetch(`${SUPABASE_URL}/rest/v1/notifications?or=(target.eq.all,contractor_id.eq.${contractor.id})&order=created_at.desc&limit=20`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}}).then(r=>r.json()),
+      ]);
+      setAssignments(asgn||[]);
+      setLogs(lg||[]);
+      setPhotos(ph||[]);
+      setNotifications(notifs||[]);
+    } catch(e){console.error(e);} finally{setLoading(false);}
+  };
+
+  const assignedProjects=data.projects.filter(p=>assignments.find(a=>a.project_id===p.id));
+  const unread=notifications.filter(n=>!n.read).length;
+
+  const getLocation=()=>{
+    if(!navigator.geolocation){setMsg("GPS supported nahi hai");return;}
+    navigator.geolocation.getCurrentPosition(pos=>{
+      setPhotoForm(f=>({...f,lat:pos.coords.latitude,lng:pos.coords.longitude}));
+      setMsg("📍 Location capture ho gayi!");
+      setTimeout(()=>setMsg(""),3000);
+    },()=>setMsg("Location allow karo browser mein"));
+  };
+
+  const submitLog=async()=>{
+    if(!selProject){setMsg("Pehle project select karo");return;}
+    if(!logForm.notes){setMsg("Notes likhna zaroori hai");return;}
+    setSubmitting(true);
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/work_logs`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},
+        body:JSON.stringify({project_id:selProject.id,contractor_id:contractor.id,workers_count:parseInt(logForm.workers_count)||0,materials_used:logForm.materials_used,progress_percent:parseInt(logForm.progress_percent)||0,notes:logForm.notes,status:logForm.status,log_date:new Date().toISOString().split("T")[0]})
+      });
+      // Update project milestone/progress in main data
+      if(logForm.progress_percent) {
+        const updatedMilestones=selProject.milestones?.map((m,i)=>{
+          const pct=parseInt(logForm.progress_percent);
+          if(pct>=100&&i===selProject.milestones.length-1) return {...m,done:true};
+          return m;
+        });
+        setData(d=>({...d,projects:d.projects.map(p=>p.id===selProject.id?{...p,milestones:updatedMilestones,status:logForm.status==="Completed"?"Completed":p.status}:p)}));
+      }
+      setMsg("✅ Daily log submit ho gaya!");
+      setLogForm({workers_count:"",materials_used:"",progress_percent:"",notes:"",status:"Ongoing"});
+      loadAll();
+    } catch(e){setMsg("Error aaya, dobara try karo");} finally{setSubmitting(false);setTimeout(()=>setMsg(""),4000);}
+  };
+
+  const submitPhoto=async()=>{
+    if(!selProject||!photoForm.file){setMsg("Project aur photo dono select karo");return;}
+    setSubmitting(true);
+    try {
+      // Upload to Supabase Storage
+      const fname=`${contractor.id}/${selProject.id}/${Date.now()}_${photoForm.file.name}`;
+      const uploadRes=await fetch(`${SUPABASE_URL}/storage/v1/object/work-photos/${fname}`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":photoForm.file.type},
+        body:photoForm.file
+      });
+      if(!uploadRes.ok){setMsg("Photo upload failed");setSubmitting(false);return;}
+      const photoUrl=`${SUPABASE_URL}/storage/v1/object/public/work-photos/${fname}`;
+      await fetch(`${SUPABASE_URL}/rest/v1/work_photos`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json"},
+        body:JSON.stringify({project_id:selProject.id,contractor_id:contractor.id,photo_url:photoUrl,caption:photoForm.caption,photo_type:photoForm.photo_type,lat:photoForm.lat,lng:photoForm.lng})
+      });
+      setMsg("✅ Photo upload ho gayi!");
+      setPhotoForm({caption:"",photo_type:"during",file:null,preview:null,lat:null,lng:null});
+      loadAll();
+    } catch(e){setMsg("Error aaya");} finally{setSubmitting(false);setTimeout(()=>setMsg(""),4000);}
+  };
+
+  const markRead=async(id)=>{
+    await fetch(`${SUPABASE_URL}/rest/v1/notifications?id=eq.${id}`,{
+      method:"PATCH",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json"},
+      body:JSON.stringify({read:true})
+    });
+    setNotifications(n=>n.map(x=>x.id===id?{...x,read:true}:x));
+  };
+
+  const TABS=[["dashboard","📊","Dashboard"],["update","📝","Daily Log"],["photos","📸","Photos Upload"],["notifs","🔔","Notifications"]];
+
+  if(loading) return <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}><div style={{width:40,height:40,border:`3px solid ${C.teal}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin 1s linear infinite"}}/><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style><div style={{color:C.ink3,fontFamily:C.mono,fontSize:13}}>Loading...</div></div>;
+
+  return(
+    <div style={{display:"flex",height:"100vh",fontFamily:C.sans,color:C.ink,overflow:"hidden"}}>
+      {/* Sidebar */}
+      <div style={{width:200,background:`linear-gradient(180deg,#0d4a42,#0f766e)`,display:"flex",flexDirection:"column",flexShrink:0}}>
+        <div style={{padding:"20px 16px 14px",borderBottom:"1px solid rgba(255,255,255,0.1)"}}>
+          <div style={{fontFamily:C.serif,fontSize:16,fontWeight:700,color:"#fff",display:"flex",alignItems:"center",gap:8}}><span>👷</span>Worker Portal</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",fontFamily:C.mono,marginTop:4,letterSpacing:"0.05em"}}>{contractor.name}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.35)",fontFamily:C.mono}}>{contractor.company||"Field Worker"}</div>
+        </div>
+        <nav style={{padding:"8px 0",flex:1}}>
+          {TABS.map(([id,ic,l])=>(
+            <button key={id} onClick={()=>setTab(id)}
+              style={{width:"100%",textAlign:"left",padding:"10px 16px",background:tab===id?"rgba(255,255,255,0.15)":"none",border:"none",borderLeft:tab===id?"3px solid #5eead4":"3px solid transparent",color:tab===id?"#fff":"rgba(255,255,255,0.5)",fontSize:12,cursor:"pointer",fontFamily:C.sans,display:"flex",alignItems:"center",gap:8,position:"relative"}}>
+              <span>{ic}</span>{l}
+              {id==="notifs"&&unread>0&&<span style={{background:"#ef4444",color:"#fff",borderRadius:99,fontSize:9,padding:"1px 6px",fontFamily:C.mono,marginLeft:"auto"}}>{unread}</span>}
+            </button>
+          ))}
+        </nav>
+        <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.1)"}}>
+          <button onClick={onLogout} style={{width:"100%",padding:"8px",borderRadius:8,background:"rgba(255,255,255,0.1)",border:"none",color:"rgba(255,255,255,0.6)",fontSize:11,cursor:"pointer",fontFamily:C.sans}}>← Logout</button>
+        </div>
+      </div>
+
+      {/* Main */}
+      <div style={{flex:1,overflow:"auto",padding:"24px",background:"#f0ede6"}}>
+        {msg&&<div style={{position:"fixed",top:20,right:20,background:msg.startsWith("✅")?C.greenL:C.redL,color:msg.startsWith("✅")?"#14532d":C.red,padding:"10px 18px",borderRadius:10,fontSize:13,fontFamily:C.mono,zIndex:9999,boxShadow:"0 4px 16px rgba(0,0,0,0.1)"}}>{msg}</div>}
+
+        {/* DASHBOARD */}
+        {tab==="dashboard"&&(
+          <div className="fu">
+            <SectionTitle sub={`Welcome back, ${contractor.name}!`}>Mera Dashboard</SectionTitle>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+              {[["Assigned Projects",assignedProjects.length,C.teal,"🏗"],["Total Logs",logs.length,C.blue,"📋"],["Photos Uploaded",photos.length,C.purple,"📸"]].map(([l,v,cl,ic])=>(
+                <Card key={l} style={{padding:18}}>
+                  <div style={{fontSize:22,marginBottom:8}}>{ic}</div>
+                  <div style={{fontFamily:C.serif,fontSize:28,fontWeight:700,color:cl}}>{v}</div>
+                  <div style={{fontSize:12,color:C.ink3,marginTop:4}}>{l}</div>
+                </Card>
+              ))}
+            </div>
+            <SectionTitle sub="Tumhare assigned projects">Mere Projects</SectionTitle>
+            {assignedProjects.length===0?<Card style={{padding:24,textAlign:"center"}}><div style={{fontSize:32,marginBottom:8}}>📭</div><div style={{color:C.ink3}}>Abhi koi project assign nahi hua</div></Card>:(
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {assignedProjects.map(p=>(
+                  <Card key={p.id} style={{padding:20}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                      <div>
+                        <div style={{fontFamily:C.serif,fontSize:16,fontWeight:700,color:C.ink}}>{p.scheme}</div>
+                        <div style={{fontSize:12,color:C.ink3,marginTop:3}}>📍 {p.village} · {p.panchayat}</div>
+                      </div>
+                      <Badge status={p.status} dict={ST}/>
+                    </div>
+                    <ProgressBar value={p.spent} max={p.budget} color={C.teal}/>
+                    <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:11,fontFamily:C.mono,color:C.ink4}}>
+                      <span>Budget: {fmtC(p.budget)}</span>
+                      <span>Spent: {fmtC(p.spent)}</span>
+                    </div>
+                    {p.milestones?.length>0&&<div style={{marginTop:12}}><Timeline milestones={p.milestones}/></div>}
+                    <div style={{marginTop:12,display:"flex",gap:8}}>
+                      <Btn sm onClick={()=>{setSelProject(p);setTab("update");}}>📝 Log Update</Btn>
+                      <Btn sm variant="secondary" onClick={()=>{setSelProject(p);setTab("photos");}}>📸 Photo Upload</Btn>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* DAILY LOG */}
+        {tab==="update"&&(
+          <div className="fu">
+            <SectionTitle sub="Aaj ka kaam record karo">Daily Work Log</SectionTitle>
+            <Card style={{padding:24,maxWidth:600}}>
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                <div>
+                  <Label>Project Select Karo *</Label>
+                  <select value={selProject?.id||""} onChange={e=>setSelProject(assignedProjects.find(p=>p.id===parseInt(e.target.value))||null)}
+                    style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:13,fontFamily:C.sans,background:"#fff",color:C.ink,outline:"none"}}>
+                    <option value="">-- Project chuniye --</option>
+                    {assignedProjects.map(p=><option key={p.id} value={p.id}>{p.scheme} — {p.village}</option>)}
+                  </select>
+                </div>
+                <Field label="Aaj Kitne Workers Aaye" type="number" value={logForm.workers_count} onChange={e=>setLogForm(f=>({...f,workers_count:e.target.value}))} placeholder="e.g. 15"/>
+                <Field label="Materials Used (cement, rod, bricks...)" value={logForm.materials_used} onChange={e=>setLogForm(f=>({...f,materials_used:e.target.value}))} placeholder="e.g. 50 bags cement, 2 ton rod"/>
+                <div>
+                  <Label>Progress % (0-100)</Label>
+                  <input type="range" min="0" max="100" value={logForm.progress_percent||0} onChange={e=>setLogForm(f=>({...f,progress_percent:e.target.value}))}
+                    style={{width:"100%",accentColor:C.teal}}/>
+                  <div style={{textAlign:"right",fontSize:12,fontFamily:C.mono,color:C.teal,fontWeight:600}}>{logForm.progress_percent||0}% Complete</div>
+                </div>
+                <div>
+                  <Label>Current Status</Label>
+                  <select value={logForm.status} onChange={e=>setLogForm(f=>({...f,status:e.target.value}))}
+                    style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:13,fontFamily:C.sans,background:"#fff",outline:"none"}}>
+                    <option>Ongoing</option>
+                    <option>Under Review</option>
+                    <option>Completed</option>
+                  </select>
+                </div>
+                <Field label="Aaj Kya Kaam Hua (Notes) *" rows={4} value={logForm.notes} onChange={e=>setLogForm(f=>({...f,notes:e.target.value}))} placeholder="Detail mein likhiye aaj ka kaam..."/>
+                <Btn onClick={submitLog} disabled={submitting} variant="teal">{submitting?"Submitting...":"✅ Log Submit Karo"}</Btn>
+              </div>
+            </Card>
+
+            {/* Recent Logs */}
+            {logs.length>0&&(
+              <div style={{marginTop:24}}>
+                <SectionTitle sub="Pichle kaam ke records">Recent Logs</SectionTitle>
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {logs.slice(0,5).map(l=>(
+                    <Card key={l.id} style={{padding:16}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                        <div style={{fontSize:13,fontWeight:600,color:C.ink}}>{fmtD(l.log_date)}</div>
+                        <Badge status={l.status} dict={ST}/>
+                      </div>
+                      <div style={{fontSize:12,color:C.ink2,marginBottom:4}}>👷 {l.workers_count} workers · {l.progress_percent}% complete</div>
+                      {l.materials_used&&<div style={{fontSize:12,color:C.ink3,marginBottom:4}}>🧱 {l.materials_used}</div>}
+                      <div style={{fontSize:12,color:C.ink3}}>{l.notes}</div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PHOTOS */}
+        {tab==="photos"&&(
+          <div className="fu">
+            <SectionTitle sub="Project ki photos upload karo">Photo Upload</SectionTitle>
+            <Card style={{padding:24,maxWidth:600}}>
+              <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                <div>
+                  <Label>Project Select Karo *</Label>
+                  <select value={selProject?.id||""} onChange={e=>setSelProject(assignedProjects.find(p=>p.id===parseInt(e.target.value))||null)}
+                    style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:13,fontFamily:C.sans,background:"#fff",outline:"none"}}>
+                    <option value="">-- Project chuniye --</option>
+                    {assignedProjects.map(p=><option key={p.id} value={p.id}>{p.scheme} — {p.village}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>Photo Type</Label>
+                  <div style={{display:"flex",gap:8}}>
+                    {[["before","🟡 Before"],["during","🔵 During"],["after","🟢 After"]].map(([v,l])=>(
+                      <button key={v} onClick={()=>setPhotoForm(f=>({...f,photo_type:v}))}
+                        style={{flex:1,padding:"8px",borderRadius:8,border:`1.5px solid ${photoForm.photo_type===v?C.teal:C.border}`,background:photoForm.photo_type===v?`${C.teal}15`:"#fff",fontSize:12,cursor:"pointer",fontFamily:C.sans,color:photoForm.photo_type===v?C.teal:C.ink3,fontWeight:photoForm.photo_type===v?600:400}}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>Photo Upload Karo *</Label>
+                  <div style={{border:`2px dashed ${C.border}`,borderRadius:12,padding:20,textAlign:"center",cursor:"pointer",background:"#fafaf8"}}
+                    onClick={()=>document.getElementById("photo-input").click()}>
+                    {photoForm.preview?<img src={photoForm.preview} style={{maxWidth:"100%",maxHeight:200,borderRadius:8,objectFit:"cover"}} alt="preview"/>:
+                      <div><div style={{fontSize:32,marginBottom:8}}>📷</div><div style={{fontSize:13,color:C.ink3}}>Tap karke photo chuniye</div></div>}
+                  </div>
+                  <input id="photo-input" type="file" accept="image/*" style={{display:"none"}}
+                    onChange={e=>{const f=e.target.files[0];if(!f)return;setPhotoForm(pf=>({...pf,file:f,preview:URL.createObjectURL(f)}));}}/>
+                </div>
+                <Field label="Caption (kya dikh raha hai photo mein)" value={photoForm.caption} onChange={e=>setPhotoForm(f=>({...f,caption:e.target.value}))} placeholder="e.g. Foundation ka kaam shuru hua"/>
+                <div>
+                  <Label>GPS Location</Label>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <Btn sm variant="secondary" onClick={getLocation}>📍 Location Capture Karo</Btn>
+                    {photoForm.lat&&<span style={{fontSize:11,fontFamily:C.mono,color:C.teal}}>✅ {photoForm.lat?.toFixed(4)}, {photoForm.lng?.toFixed(4)}</span>}
+                  </div>
+                </div>
+                <Btn onClick={submitPhoto} disabled={submitting} variant="teal">{submitting?"Uploading...":"📤 Photo Upload Karo"}</Btn>
+              </div>
+            </Card>
+
+            {/* Photo Gallery */}
+            {photos.length>0&&(
+              <div style={{marginTop:24}}>
+                <SectionTitle sub="Tumhari uploaded photos">Photo Gallery</SectionTitle>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+                  {photos.map(ph=>(
+                    <Card key={ph.id} style={{overflow:"hidden"}}>
+                      <img src={ph.photo_url} style={{width:"100%",height:140,objectFit:"cover"}} alt={ph.caption}/>
+                      <div style={{padding:"10px 12px"}}>
+                        <div style={{fontSize:11,fontFamily:C.mono,color:ph.photo_type==="before"?C.amber:ph.photo_type==="after"?C.green:C.blue,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em"}}>{ph.photo_type}</div>
+                        {ph.caption&&<div style={{fontSize:12,color:C.ink2}}>{ph.caption}</div>}
+                        {ph.lat&&<div style={{fontSize:10,color:C.ink4,marginTop:4,fontFamily:C.mono}}>📍 {ph.lat?.toFixed(3)}, {ph.lng?.toFixed(3)}</div>}
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* NOTIFICATIONS */}
+        {tab==="notifs"&&(
+          <div className="fu">
+            <SectionTitle sub="Admin aur system se messages">Notifications</SectionTitle>
+            {notifications.length===0?<Card style={{padding:24,textAlign:"center"}}><div style={{fontSize:32,marginBottom:8}}>🔔</div><div style={{color:C.ink3}}>Koi notification nahi abhi</div></Card>:(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {notifications.map(n=>(
+                  <Card key={n.id} style={{padding:16,background:n.read?"#fff":"#f0fdf4",borderLeft:`3px solid ${n.read?C.border:C.green}`,cursor:"pointer"}} onClick={()=>markRead(n.id)}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:600,fontSize:13,color:C.ink,marginBottom:4}}>{n.title}</div>
+                        <div style={{fontSize:12,color:C.ink3}}>{n.message}</div>
+                        <div style={{fontSize:10,fontFamily:C.mono,color:C.ink4,marginTop:6}}>{fmtD(n.created_at?.split("T")[0])}</div>
+                      </div>
+                      {!n.read&&<div style={{width:8,height:8,borderRadius:"50%",background:C.green,flexShrink:0,marginTop:4}}/>}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
